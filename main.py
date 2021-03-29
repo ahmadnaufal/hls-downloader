@@ -14,6 +14,7 @@ class PlaylistFetcherThread(threading.Thread):
     self.threadID = threadID
     self.name = name
     self.playlist_url = playlist_url
+    self.playlist_filename = 'chunklist.m3u8'
 
   def run(self):
     while True:
@@ -32,6 +33,7 @@ class PlaylistFetcherThread(threading.Thread):
         q.put(ts_props)
         hmap[segment.uri] = True
 
+      playlist.dump(self.playlist_filename)
       time.sleep(4)
 
 
@@ -40,26 +42,56 @@ class DownloaderThread(threading.Thread):
     super(DownloaderThread, self).__init__()
     self.threadID = threadID
     self.name = name
+    self.ts_list_filename = 'list.txt'
+    self.counter = 0
+    self.write_to_list_batch_size = 10
+    self.batch_list = []
+    self.num_retries = 3
 
   def run(self):
     while True:
-      base_uri, filename = q.get(block=True, timeout=30)
-      hmap.pop(filename)
+      filename = self.dequeue_download()
+      self.insert_to_batch(filename)
 
+  def dequeue_download(self):
+    base_uri, filename = q.get(block=True, timeout=30)
+
+    success = False
+    for i in range(self.num_retries):
       resp = requests.get(base_uri + filename)
-      logging.info("Consumer - Request to %s" % (base_uri+filename))
+      logging.info("Consumer - Request to %s (Retries: %d)" % (base_uri+filename, i))
 
-      if resp.status_code != 200:
-        # retry
-        pass
+      if resp.status_code == 200:
+        success = True
+        break
 
-      with open(filename, 'wb') as fd:
-        for chunk in resp.iter_content(chunk_size=128):
-          fd.write(chunk)
+    if not success:
+      raise "Error after attempting to retry"
 
-      q.task_done()
+    with open(filename, 'wb') as fd:
+      for chunk in resp.iter_content(chunk_size=128):
+        fd.write(chunk)
 
-example = "https://hls-origin218.showroom-cdn.com/liveedge/ada318fccc18501f08e9e4689aaf8b7e854ac3b56050f7923999033ba6494436_source/chunklist.m3u8"
+    q.task_done()
+
+    return filename
+
+  def insert_to_batch(self, ts_filename):
+      self.counter += 1
+      self.batch_list.append(ts_filename)
+
+      # flush into output list ts file for each batch
+      if self.counter % self.write_to_list_batch_size == 0:
+        self.dump_batch_to_file()
+        self.batch_list.clear()
+
+  def dump_batch_to_file(self):
+      with open(self.ts_list_filename, 'a+') as list_fd:
+        for filename in self.batch_list:
+          list_fd.write("file '%s'\n" % (filename))
+
+
+example = "https://hls-origin247.showroom-cdn.com/liveedge/ngrp:573027a0cd58d4c8c4fdcca11d251808f23f86701970b8aed6b24da6e6786aa7_all/chunklist_b512037.m3u8"
 
 def main():
   t1 = DownloaderThread(1, "downloader")
