@@ -1,3 +1,4 @@
+import argparse
 import logging
 import m3u8
 import queue
@@ -44,7 +45,7 @@ class DownloaderThread(threading.Thread):
     self.name = name
     self.ts_list_filename = 'list.txt'
     self.counter = 0
-    self.write_to_list_batch_size = 10
+    self.write_to_list_batch_size = 1
     self.batch_list = []
     self.num_retries = 3
 
@@ -91,11 +92,15 @@ class DownloaderThread(threading.Thread):
           list_fd.write("file '%s'\n" % (filename))
 
 
-example = "https://hls-origin247.showroom-cdn.com/liveedge/ngrp:573027a0cd58d4c8c4fdcca11d251808f23f86701970b8aed6b24da6e6786aa7_all/chunklist_b512037.m3u8"
-
 def main():
+  parser = argparse.ArgumentParser(description='Download a HLS stream video, given a m3u8 playlist path.')
+  parser.add_argument('playlist_url', type=str,
+                      help='The m3u8 playlist URL path.')
+
+  args = parser.parse_args()
+
   t1 = DownloaderThread(1, "downloader")
-  t2 = PlaylistFetcherThread(2, "fetcher", example)
+  t2 = PlaylistFetcherThread(2, "fetcher", args.playlist_url)
 
   logging.basicConfig(level=logging.INFO)
 
