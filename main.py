@@ -41,10 +41,8 @@ class PlaylistFetcherThread(threading.Thread):
       time.sleep(playlist.target_duration)
 
 
-class DownloaderThread(threading.Thread):
-  def __init__(self, threadID, name, output_dir):
-    super(DownloaderThread, self).__init__()
-    self.threadID = threadID
+class Downloader(object):
+  def __init__(self, name, output_dir):
     self.name = name
     self.ts_list_filename = 'list.txt'
     self.counter = 0
@@ -53,7 +51,7 @@ class DownloaderThread(threading.Thread):
     self.num_retries = 3
     self.output_dir = output_dir
 
-  def run(self):
+  def run_download(self):
     while True:
       filename = self.dequeue_download()
       self.insert_to_batch(filename)
@@ -110,8 +108,8 @@ def main():
 
   args = parser.parse_args()
 
-  t1 = DownloaderThread(1, "downloader", args.odir)
-  t2 = PlaylistFetcherThread(2, "fetcher", args.playlist_url, args.odir)
+  downloader = Downloader("downloader", args.odir)
+  fetcher = PlaylistFetcherThread(2, "fetcher", args.playlist_url, args.odir)
 
   logging.basicConfig(level=logging.INFO)
 
@@ -119,8 +117,14 @@ def main():
     logging.info("Wait until %d (current time: %f)" % (args.start_at, datetime.now().timestamp()))
     time.sleep(1)
 
-  t1.start()
-  t2.start()
+  try:
+    fetcher.start()
+    downloader.run_download()
+  except Exception as err:
+    logging.info("Error thrown: %s" % (err))
+  finally:
+    logging.info("Download completed.")
+    fetcher.join()
 
 
 if __name__ == '__main__':
